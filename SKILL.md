@@ -1,7 +1,7 @@
 ---
 name: memory-crystal
 description: Memory Crystal 记忆晶体 — Hermes Agent 结构化记忆系统操作指南。封装 fact_store + fact_feedback 的最佳实践、常用模板、pitfalls。
-version: 1.0.0
+version: 1.3.0
 author: yingming
 tags: [memory, fact-store, knowledge-graph, reasoning, hermes-core]
 category: hermes
@@ -44,22 +44,39 @@ created: 2026-06-08
 
 ## 核心概念
 
-Memory Crystal 是 Hermes Agent 的结构化记忆系统，由两个工具构成：
+Memory Crystal **不是**"文件写满了就拆分建索引"。它是基于**全息缩减表示（Holographic Reduced Representations）**的向量记忆系统——每条事实不是一段文字，而是一个 1024 维的相位向量。概念之间通过向量代数绑定（bind）、解绑（unbind）、叠加（bundle），从而支持跨实体推理。
 
-| 工具 | 功能 | 类比 |
-|------|------|------|
-| `fact_store` | 结构化存储 + 推理 | 晶体的切面 |
-| `fact_feedback` | 反馈进化 | 晶体的光泽度 |
+底层实现在 `plugins/memory/holographic/holographic.py`，基于 numpy 的相位向量运算。
 
-### 与传统 Memory 的区别
+### 两套系统的本质区别
 
-| 维度 | memory 工具 | Memory Crystal |
+```
+memory 工具 ≈ 一个不断追加的 .txt 文件
+    → 每次会话全量注入 system prompt
+    → 写满了就截断，没有查询能力
+    → 适合短期偏好/临时状态
+
+fact_store ≈ 一个带向量索引的结构化数据库
+    → 每条事实有类别、标签、信任分数
+    → 支持 search/probe/reason/contradict
+    → 信任分数随使用反馈自动进化
+    → 适合长期环境配置/工作教训/知识网络
+```
+
+| 维度 | memory 工具 | Memory Crystal (fact_store) |
 |------|------------|----------------|
-| 存储结构 | 纯文本列表 | 结构化实体（类别/标签/信任分数） |
-| 检索方式 | 关键词匹配 | 关键词 + 实体探查 + 关联追踪 |
+| 存储结构 | 纯文本列表 | 结构化实体（类别/标签/信任分数）+ HRR 向量 |
+| 检索方式 | 关键词匹配 | 向量相似度 + 实体探查 + 关联追踪 |
 | 推理能力 | 无 | 跨实体推理 + 矛盾检测 |
 | 进化机制 | 静态 | 反馈驱动（信任分数训练） |
 | 适用场景 | 短期/会话级 | 长期/跨任务/知识网络 |
+
+### 两个工具
+
+| 工具 | 功能 | 类比 |
+|------|------|------|
+| `fact_store` | 结构化存储 + 推理（add/search/probe/reason/contradict/list） | 晶体的切面 |
+| `fact_feedback` | 反馈进化（helpful/unhelpful → 训练信任分数） | 晶体的光泽度 |
 
 ### 何时用哪个
 
@@ -106,6 +123,16 @@ fact_store(action='add', content='MiMo 很慢')
 
 ### 2. 搜索事实 (search)
 
+**检索流水线**（2026-06-08 重构）：
+```
+Stage 1: FTS5 前缀匹配（"WSL" → "WSL*"，速度快）
+    ↓ 无结果
+Stage 2: LIKE 子串匹配（"网络" → LIKE '%网络%'，中文兜底）
+    ↓ 候选集
+Stage 3: Jaccard 重排序（query tokens ↔ fact tokens 重叠度）
+Stage 4: 信任分数加权（relevance × trust_score）
+```
+
 **模板**：
 ```python
 fact_store(action='search', query='[关键词1] [关键词2]')
@@ -115,7 +142,12 @@ fact_store(action='search', query='[关键词1] [关键词2]')
 ```python
 fact_store(action='search', query='cron 超时')
 fact_store(action='search', query='MiMo 性能')
+fact_store(action='search', query='WSL')       # FTS5 前缀 → 找到 "WSL网络"
+fact_store(action='search', query='网络')      # FTS5 失败 → LIKE 兜底 → 找到
+fact_store(action='search', query='记忆')      # LIKE 子串匹配
 ```
+
+**注意**：多词查询用 OR 连接（自动），返回结果按相关度排序。中文词无需特殊处理，LIKE 兜底自动覆盖。
 
 ### 3. 实体探查 (probe)
 
@@ -305,6 +337,118 @@ fact_store(action='search', query='MiMo')
 fact_store(action='probe', entity='MiMo')
 ```
 
+### 6. FTS5 中文搜索失败（已修复 2026-06-08）
+
+**问题**：`search('WSL')` 返回空，但 `list` 能看到包含 "WSL" 的事实。
+
+**根因**：FTS5 的 `unicode61` 分词器将中英文混合文本合并成一个 token：
+```
+存储: "WSL网络关键事实"
+分词: ["WSL网络关键事实"]  ← "WSL" 和 "网络" 被合并
+搜索 "WSL": 找不到单独的 "WSL" 词 → 返回空
+搜索 "WSL*": 前缀匹配 "WSL网络" → 成功
+```
+
+**修复**（`plugins/memory/holographic/retrieval.py`）：
+- `_build_fts_query()` 自动加前缀通配符（query → query*）
+- 纯中文词跳过 FTS5（前缀匹配对中文无效）
+- `_fts_candidates()` 增加 LIKE 子串降级：FTS5 无结果时用 `LIKE '%关键词%'`
+- `_tokenize_for_like()` 中文↔拉丁文边界分词："WSL网络" → ["WSL", "网络"]
+
+**修复后验证**：
+```python
+fact_store(action='search', query='WSL')      # FTS5 前缀 → 1 条 ✅
+fact_store(action='search', query='网络')     # LIKE 兜底 → 1 条 ✅
+fact_store(action='search', query='记忆')     # LIKE 兜底 → 3 条 ✅
+fact_store(action='search', query='热点刀锋')  # LIKE 兜底 → 2 条 ✅
+```
+
+### 7. numpy 未安装 → 整个向量检索链断裂
+
+**症状**：probe/related/reason 全部降级为 search，search 对中文又返回空。
+
+**根因**：`plugins/memory/holographic/holographic.py` 用 numpy 做相位向量运算。如果 numpy 不可用（`hrr._HAS_NUMPY = False`）：
+- `_compute_hrr_vector()` 静默跳过（不报错）
+- probe/related/reason 的 SQL `WHERE hrr_vector IS NOT NULL` 过滤掉所有无向量的事实
+- 降级为 search → 如果 FTS5 也失败 → 返回空
+
+**诊断**：
+```python
+# 在 execute_code 中检查
+import sys; sys.path.insert(0, "/home/yingming/.hermes/hermes-agent")
+from plugins.memory.holographic import holographic as hrr
+print(f"hrr._HAS_NUMPY: {hrr._HAS_NUMPY}")  # 必须为 True
+```
+
+**修复**：`uv pip install numpy`（在 .venv 中安装）
+
+**回填数据**：安装 numpy 后，已有事实缺少 HRR 向量，需要回填：
+```python
+from plugins.memory.holographic.store import MemoryStore
+store = MemoryStore(db_path="~/.hermes/memory_store.db")
+result = store.backfill_all()
+# → {'facts_processed': 19, 'vectors_computed': 19, 'entities_added': 87, 'banks_rebuilt': 3}
+```
+
+### 8. 实体提取不认中文
+
+**症状**：`probe('WSL')` 返回空，因为事实没有实体关联。
+
+**根因**：`store.py` 的 `_extract_entities()` 只用英文正则：
+- `\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)` — 只认英文大写词
+- `"xxx"` / `'xxx'` — 只认引号
+
+中文文本 "WSL网络关键事实" 中的 "WSL" 后面直接跟中文，正则不认。
+
+**修复**（2026-06-08）：
+- 新增 `_RE_CN_PAREN_TERM` 正则：提取 "MiMo (小米大模型)" 模式
+- 新增 `_KNOWN_ENTITIES` 集合：30+ 个已知技术术语（WSL/MiMo/问财/A股/numpy 等）
+- `_extract_entities()` 新增括号术语提取 + 已知术语子串匹配
+
+**回填**：同 Pitfall #7，`store.backfill_all()` 会同时修复实体和向量。
+
+### 9. HRR 向量静默缺失
+
+**症状**：部分事实有 HRR 向量，部分没有。有向量的能被 probe 找到，没有的只能靠 FTS5。
+
+**根因**：numpy 安装时间晚于事实创建时间。`_compute_hrr_vector()` 在 numpy 不可用时直接 `return`，不报错不标记。
+
+**诊断**：
+```python
+# 检查哪些事实缺少向量
+store._conn.execute("SELECT fact_id FROM facts WHERE hrr_vector IS NULL").fetchall()
+```
+
+**修复**：`store.backfill_all()` 一次性补全所有缺失向量。
+
+### 10. Memory Bank 计数虚高
+
+**症状**：`memory_banks` 表的 `fact_count` 远大于实际事实数。
+
+**根因**：删除事实时 bank 没正确重建，或 bank 是累积计算而非实时同步。
+
+**修复**：`store.backfill_all()` 会重建所有 bank 并清理孤儿 bank。
+
+### 11. 代码修改后需要重启 Hermes
+
+**症状**：修改了 `plugins/memory/holographic/*.py` 但 `fact_store` 工具行为不变。
+
+**根因**：Python 模块缓存。Hermes 启动时加载插件代码到内存，运行期间不会重新加载。
+
+**解决**：修改插件代码后必须重启 Hermes 才能生效。在 execute_code 中直接 import 可以绕过缓存（用于验证），但 agent 的 fact_store 工具走的是已缓存的旧代码。
+
+### 12. 先写文档后测试（流程错误）
+
+**教训**（2026-06-08）：创建了完整的 SKILL.md + Wiki + GitHub 仓库 + 模板，但没有验证 fact_store 的 search/probe/reason 是否正常工作。用户发现后指出："这套系统并没有经过测试这个环节？"
+
+**正确流程**：
+1. **先验证核心功能** → 测试 add/search/probe/reason/contradict
+2. **发现问题立即修复** → 不要继续写文档
+3. **修复后重新测试** → 确认所有操作正常
+4. **然后才写文档和技能** → 文档反映真实行为
+
+**原则**：工具能用 > 文档好看。没有经过测试的文档是误导。
+
 ## 与 memory 工具的配合
 
 ```
@@ -331,6 +475,8 @@ fact_store(action='probe', entity='MiMo')
 
 - [架构详解](references/architecture.md)
 - [ASCII Logo](references/logo.txt)
+- [FTS5 中文搜索修复记录](references/fts5-chinese-fix.md) — 2026-06-08 修复 search 对中文返回空的问题
+- [Holographic 调试指南](references/holographic-debugging-guide.md) — 诊断脚本、修复步骤、检索流水线详解
 - [Wiki 文档](/mnt/c/Users/yingm/wiki/systems/hermes/2026-06-08-Memory-Crystal-记忆晶体系统.md)
 
 ## 口号
