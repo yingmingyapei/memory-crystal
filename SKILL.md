@@ -1,7 +1,7 @@
 ---
 name: memory-crystal
-description: Memory Crystal 记忆晶体 — Hermes Agent 结构化记忆系统操作指南。封装 fact_store + fact_feedback 的最佳实践、常用模板、pitfalls。
-version: 1.3.0
+description: Memory Crystal 记忆晶体——Hermes Agent 结构化记忆系统。新增 Dream 记忆整合、自动修剪、成功反馈、选择性注入。借鉴 Claude Code 最佳实践。
+version: 1.2.0
 author: yingming
 tags: [memory, fact-store, knowledge-graph, reasoning, hermes-core]
 category: hermes
@@ -449,6 +449,71 @@ store._conn.execute("SELECT fact_id FROM facts WHERE hrr_vector IS NULL").fetcha
 
 **原则**：工具能用 > 文档好看。没有经过测试的文档是误导。
 
+## v2.0 新增：Dream 记忆整合
+
+借鉴 Claude Code 的 Dream Memory Consolidation，Memory Crystal 现在支持四阶段记忆整合：
+
+```
+Phase 1 — 定位：扫描所有事实，建立基线
+Phase 2 — 采集：从会话/任务中提取新信号（成功+失败）
+Phase 3 — 整合：合并重复、更新过时、补充标签
+Phase 4 — 修剪：清理低信任、合并近似、生成报告
+```
+
+**触发时机**：每日 22:00 由 Phoenix Protocol 深度进化任务自动触发，或用户说"记忆整合"时手动触发。
+
+**详细流程**：参考 `references/dream-consolidation.md`
+
+## v2.0 新增：自动记忆修剪
+
+Memory Crystal 现在支持自动修剪规则：
+
+| 条件 | 动作 |
+|------|------|
+| trust < 0.3 且创建 >30 天 | 删除 |
+| trust < 0.2 且创建 >7 天 | 删除 |
+| content_similarity > 0.8 | 合并（保留较新的） |
+| 内容 <10 字且 trust < 0.5 | 增强或删除 |
+| helpful_count ≥ 3 | 强化（永不自动删除） |
+
+**安全矩阵**：
+- 创建 <7 天的事实 → 永不自动删除
+- trust ≥ 0.5 的事实 → 永不自动删除
+- 被标记 helpful ≥3 次 → 永不自动删除
+
+**详细规则**：参考 `references/auto-pruning-rules.md`
+
+## v2.0 新增：成功反馈 + 双向记录
+
+借鉴 Claude Code 的洞察：
+> "如果只保存纠正，会避免过去的错误，但会偏离用户已验证过的方法，变得过于谨慎。"
+
+**新增反馈类型**：
+
+| 场景 | 反馈 | 效果 |
+|------|------|------|
+| 事实被使用且正确 | `fact_feedback(action='helpful')` | trust +0.1 |
+| 事实被使用但错误 | `fact_feedback(action='unhelpful')` | trust -0.1 |
+| 修复验证通过 | `fact_store(action='add', tags='verified-fix')` | 记录成功模式 |
+| 工作模式有效 | `fact_store(action='add', tags='success-pattern')` | 记录成功方法 |
+
+**关键改变**：不只在犯错时记录，在做对时也要记录。成功的模式和失败的教训同样有价值。
+
+## v2.0 新增：记忆选择性注入
+
+借鉴 Claude Code 的 Memory Synthesis 机制，Memory Crystal 现在推荐按需检索而非全量注入：
+
+| 场景 | 推荐策略 | 工具 |
+|------|---------|------|
+| 简单查询 | search(关键词) top-3 | `fact_store(action='search')` |
+| 涉及特定实体 | probe(实体名) | `fact_store(action='probe')` |
+| 多实体交叉 | reason([实体列表]) | `fact_store(action='reason')` |
+| 全量巡检 | list（全部） | `fact_store(action='list')` |
+
+**原则**：搜索优于全量，top-N 优于全部，实体感知优于关键词，推理优于检索。
+
+**详细指南**：参考 `references/selective-injection.md`
+
 ## 与 memory 工具的配合
 
 ```
@@ -477,6 +542,9 @@ store._conn.execute("SELECT fact_id FROM facts WHERE hrr_vector IS NULL").fetcha
 - [ASCII Logo](references/logo.txt)
 - [FTS5 中文搜索修复记录](references/fts5-chinese-fix.md) — 2026-06-08 修复 search 对中文返回空的问题
 - [Holographic 调试指南](references/holographic-debugging-guide.md) — 诊断脚本、修复步骤、检索流水线详解
+- [Dream 记忆整合](references/dream-consolidation.md) — v2.0 四阶段整合流程（定位→采集→整合→修剪）
+- [自动修剪规则](references/auto-pruning-rules.md) — v2.0 过时删除+重复合并+低信任清理
+- [选择性注入](references/selective-injection.md) — v2.0 按需检索替代全量注入
 - [Wiki 文档](/mnt/c/Users/yingm/wiki/systems/hermes/2026-06-08-Memory-Crystal-记忆晶体系统.md)
 
 ## 口号
