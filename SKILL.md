@@ -1,7 +1,7 @@
 ---
 name: memory-crystal
-description: Memory Crystal 记忆晶体——Hermes Agent 结构化记忆系统。新增 Dream 记忆整合、自动修剪、成功反馈、选择性注入。借鉴 Claude Code 最佳实践。
-version: 1.2.0
+description: Memory Crystal 记忆晶体 v2.0.0——Hermes Agent 结构化记忆系统。插件源码 + plugin.yaml + backfill 回填 + 实体提取增强。包含 store.py / retrieval.py / holographic.py 完整实现。新增 Dream 记忆整合、自动修剪、成功反馈、选择性注入。
+version: 2.0.0
 author: yingming
 tags: [memory, fact-store, knowledge-graph, reasoning, hermes-core]
 category: hermes
@@ -498,6 +498,56 @@ Memory Crystal 现在支持自动修剪规则：
 | 工作模式有效 | `fact_store(action='add', tags='success-pattern')` | 记录成功方法 |
 
 **关键改变**：不只在犯错时记录，在做对时也要记录。成功的模式和失败的教训同样有价值。
+
+## v2.0 新增：插件源码发布
+
+Memory Crystal v2.0 将完整的实现源码发布到本仓库，无需依赖 Hermes pip 包即可查看和修改源码。
+
+**仓库结构**：
+
+```
+memory-crystal/
+├── plugin.yaml                     # Hermes 插件注册
+├── plugins/memory/holographic/     # 核心实现代码
+│   ├── __init__.py                 # MemoryCrystalProvider 插件入口
+│   ├── store.py                    # SQLite 存储层（实体解析、信任评分）
+│   ├── retrieval.py                # 混合检索引擎（FTS5 + Jaccard + HRR）
+│   └── holographic.py              # HRR 相位向量代数库
+├── references/                     # 参考文档
+└── templates/                      # 使用模板
+```
+
+**代码亮点**：
+
+| 文件 | 核心功能 | 亮点 |
+|------|---------|------|
+| `holographic.py` | HRR 相位向量 | SHA-256 确定性原子、bind/unbind/bundle、SNR 预警 |
+| `store.py` | SQLite 存储 | FTS5 + WAL、实体解析（含中文正则 + 30+ 已知术语）、backfill_all() |
+| `retrieval.py` | 混合检索 | FTS5/Jaccard/HRR 三路加权、中文 LIKE 兜底、矛盾检测 |
+| `__init__.py` | 插件入口 | MemoryProvider 接口、fact_store/fact_feedback 工具处理 |
+
+### backfill_all() 一键恢复
+
+当 numpy 安装时间晚于事实创建时间时，已有事实缺少 HRR 向量和实体关联。`backfill_all()` 一次修复：
+
+```python
+from plugins.memory.holographic.store import MemoryStore
+store = MemoryStore(db_path="~/.hermes/memory_store.db")
+result = store.backfill_all()
+# {'facts_processed': 19, 'entities_added': 87, 'vectors_computed': 19, 'banks_rebuilt': 3}
+```
+
+`backfill_all()` 做三件事：
+1. 重新提取所有事实的实体（用新的中文正则 + 已知术语表）
+2. 重新计算所有 HRR 向量（需要 numpy）
+3. 重建所有 memory bank 并清理孤儿 bank
+
+### SNR 容量预警
+
+HRR 存储有容量上限：`SNR = sqrt(dim / n_items)`。dim=1024 时：
+- n_items < 256: SNR > 2.0 ✅ 正常
+- n_items > 256: SNR < 2.0 ⚠️ 告警
+- 告警日志：`HRR storage near capacity: SNR=1.85 (dim=1024, n_items=300)`
 
 ## v2.0 新增：记忆选择性注入
 

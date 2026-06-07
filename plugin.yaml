@@ -1,0 +1,61 @@
+name: memory-crystal
+description: |
+  Memory Crystal — Holographic structured memory system for Hermes Agent.
+  Provides fact_store and fact_feedback tools with entity resolution,
+  trust scoring, HRR vector algebra, and compositional reasoning.
+
+version: 2.0.0
+author: yingming
+tags: [memory, fact-store, holographic, knowledge-graph, entity, reasoning, hermes]
+category: memory
+
+# Plugin entry point
+entry: plugins.memory.holographic
+
+# Configuration (profile-scoped in config.yaml)
+config:
+  db_path:
+    description: "SQLite database path"
+    default: "$HERMES_HOME/memory_store.db"
+  auto_extract:
+    description: "Auto-extract facts at session end"
+    default: "false"
+    choices: ["true", "false"]
+  default_trust:
+    description: "Default trust score for new facts"
+    default: "0.5"
+  hrr_dim:
+    description: "HRR vector dimensions (1024 = 8KB per vector)"
+    default: "1024"
+  hrr_weight:
+    description: "Weight for HRR similarity in search (0.0-1.0)"
+    default: "0.3"
+  min_trust_threshold:
+    description: "Minimum trust score for search results"
+    default: "0.3"
+  temporal_decay_half_life:
+    description: "Temporal decay half-life in days (0 = disabled)"
+    default: "0"
+
+dependencies:
+  python:
+    - numpy>=1.24
+
+tools:
+  - fact_store:
+      description: "Structured memory with add/search/probe/reason/contradict"
+      actions:
+        - add: "Store a fact with category, tags, and auto entity extraction"
+        - search: "Hybrid keyword search (FTS5 + Jaccard + HRR vector)"
+        - probe: "Entity recall using HRR algebra"
+        - related: "Structural adjacency discovery"
+        - reason: "Multi-entity compositional reasoning"
+        - contradict: "Memory hygiene — find conflicting facts"
+        - update: "Partially update a fact"
+        - remove: "Delete a fact"
+        - list: "Browse all facts by trust score"
+  - fact_feedback:
+      description: "Rate facts after using them (trains trust scores)"
+      actions:
+        - helpful: "Trust +0.05, marks fact as verified"
+        - unhelpful: "Trust -0.10, marks fact as unreliable"
