@@ -1,557 +1,223 @@
 ---
-name: memory-crystal
-description: Memory Crystal 记忆晶体——Hermes Agent 结构化记忆系统。新增 Dream 记忆整合、自动修剪、成功反馈、选择性注入。借鉴 Claude Code 最佳实践。
-version: 1.2.0
-author: yingming
-tags: [memory, fact-store, knowledge-graph, reasoning, hermes-core]
-category: hermes
-created: 2026-06-08
+name: knowledge-retrieval
+description: "Memory Crystal v2.1.0 主动检索模块 - 在用户提问或执行操作前，自动检索相关历史知识和会话记录"
+version: 2.1.0
+author: Hermes Agent
+license: MIT
+metadata:
+  hermes:
+    tags: [memory, retrieval, knowledge, fact-store, session-search, wiki, memory-crystal]
+    category: hermes
+    related_skills: [memory-crystal, llm-wiki, self-improvement]
 ---
 
-# Memory Crystal 记忆晶体
+# 记忆系统主动检索
 
-```
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║              ✦  M E M O R Y   C R Y S T A L  ✦               ║
-    ║                     ─── 记 忆 晶 体 ───                       ║
-    ║                         .  *  .                               ║
-    ║                        . /|\ .                                ║
-    ║                       . / | \ .                               ║
-    ║                      . /  |  \ .                              ║
-    ║                     ◆─────◆─────◆                             ║
-    ║                    /|    /|\    |\                             ║
-    ║                   / |   / | \   | \                            ║
-    ║                  /  |  /  |  \  |  \                           ║
-    ║                 /   | /   |   \ |   \                          ║
-    ║                ◆────◆────◆────◆────◆                          ║
-    ║                 \   | \   |   / |   /                          ║
-    ║                  \  |  \  |  /  |  /                           ║
-    ║                   \ |   \ | /   | /                            ║
-    ║                    \|    \|/    |/                             ║
-    ║                     ◆─────◆─────◆                             ║
-    ║          "让知识结晶，让记忆永恒"                               ║
-    ╚═══════════════════════════════════════════════════════════════╝
-```
+在用户提问或执行操作前，自动检索相关历史知识和会话记录。
 
 ## 触发条件
 
-当用户说以下关键词时加载此技能：
-- "记忆晶体" / "Memory Crystal"
-- "fact_store" / "fact_feedback"
-- "存储事实" / "查询事实" / "记忆系统"
-- "实体探查" / "关联推理" / "矛盾检测"
-- "信任分数"
+使用此技能当：
+- 用户提出问题时
+- 用户要求执行操作时
+- 需要查找历史知识时
+- 需要查找历史会话时
 
-## 核心概念
+## 核心功能
 
-Memory Crystal **不是**"文件写满了就拆分建索引"。它是基于**全息缩减表示（Holographic Reduced Representations）**的向量记忆系统——每条事实不是一段文字，而是一个 1024 维的相位向量。概念之间通过向量代数绑定（bind）、解绑（unbind）、叠加（bundle），从而支持跨实体推理。
+### 1. 消息分析
+- 意图分类（question/action/query/general）
+- 实体提取（股票/工具/配置）
+- 关键词提取
+- 紧急程度评估
+- 主题识别
 
-底层实现在 `plugins/memory/holographic/holographic.py`，基于 numpy 的相位向量运算。
+### 2. 知识检索
+- fact_store 检索（结构化知识）
+- session_search 检索（会话历史）
+- llm-wiki 检索（可视化知识库）
 
-### 两套系统的本质区别
+### 3. 相关性评分
+- 关键词匹配评分
+- 实体匹配评分
+- 信任分数评分
+- 新鲜度评分
 
-```
-memory 工具 ≈ 一个不断追加的 .txt 文件
-    → 每次会话全量注入 system prompt
-    → 写满了就截断，没有查询能力
-    → 适合短期偏好/临时状态
+### 4. 响应生成
+- 上下文构建
+- 建议生成
+- 动作生成
 
-fact_store ≈ 一个带向量索引的结构化数据库
-    → 每条事实有类别、标签、信任分数
-    → 支持 search/probe/reason/contradict
-    → 信任分数随使用反馈自动进化
-    → 适合长期环境配置/工作教训/知识网络
-```
+## 使用方法
 
-| 维度 | memory 工具 | Memory Crystal (fact_store) |
-|------|------------|----------------|
-| 存储结构 | 纯文本列表 | 结构化实体（类别/标签/信任分数）+ HRR 向量 |
-| 检索方式 | 关键词匹配 | 向量相似度 + 实体探查 + 关联追踪 |
-| 推理能力 | 无 | 跨实体推理 + 矛盾检测 |
-| 进化机制 | 静态 | 反馈驱动（信任分数训练） |
-| 适用场景 | 短期/会话级 | 长期/跨任务/知识网络 |
+### 方法 1: 直接调用工具
 
-### 两个工具
-
-| 工具 | 功能 | 类比 |
-|------|------|------|
-| `fact_store` | 结构化存储 + 推理（add/search/probe/reason/contradict/list） | 晶体的切面 |
-| `fact_feedback` | 反馈进化（helpful/unhelpful → 训练信任分数） | 晶体的光泽度 |
-
-### 何时用哪个
-
-| 信息类型 | 存储位置 | 示例 |
-|---------|---------|------|
-| 用户偏好 | memory | "用户对自动化失败容忍度低" |
-| 环境配置 | fact_store | "WSL 代理端口 10808" |
-| 工作教训 | fact_store | "cron job prompt 必须用 update 命令" |
-| 临时状态 | memory | "当前正在分析 MiMo 性能问题" |
-| 持久技能 | skill | "热点刀锋六阶段流程" |
-
-## 操作指南
-
-### 1. 添加事实 (add)
-
-**何时添加**：
-- 用户纠正 → 立即存储（高信任）
-- 踩坑教训 → 立即存储（标签: lesson）
-- 环境发现 → 存储（类别: tool/general）
-
-**模板**：
 ```python
-fact_store(
-    action='add',
-    content='[具体事实描述，包含条件、根因、解决方案]',
-    category='general',  # user_pref / project / tool / general
-    tags='[标签1],[标签2],[标签3]'
-)
+import sys
+from pathlib import Path
+
+# 添加 scripts 目录到路径
+scripts_dir = Path.home() / '.hermes' / 'scripts'
+sys.path.insert(0, str(scripts_dir))
+
+from knowledge_retrieval import retrieve_for_message
+
+# 检索相关知识
+result = retrieve_for_message("如何配置 fact_store?")
+
+# 获取上下文
+context = result['response']['context']
+
+# 获取建议
+suggestions = result['response']['suggestions']
+
+# 获取动作
+actions = result['response']['actions']
 ```
 
-**示例**：
+### 方法 2: 使用便捷函数
+
 ```python
-# 好的事实 ✅
-fact_store(
-    action='add',
-    content='MiMo 输入超过 28K tokens 时 API 响应显著变慢。根因：服务器容量有限，KV-cache 处理能力不足。缓解：context_length=50000, compression.threshold=0.25',
-    category='tool',
-    tags='mimo,xiaomi,performance,bottleneck'
-)
+import sys
+from pathlib import Path
 
-# 坏的事实 ❌（缺乏具体条件和根因）
-fact_store(action='add', content='MiMo 很慢')
+scripts_dir = Path.home() / '.hermes' / 'scripts'
+sys.path.insert(0, str(scripts_dir))
+
+from knowledge_retrieval import get_context_for_message, get_suggestions_for_message
+
+# 只获取上下文
+context = get_context_for_message("如何配置 fact_store?")
+
+# 只获取建议
+suggestions = get_suggestions_for_message("如何配置 fact_store?")
 ```
 
-### 2. 搜索事实 (search)
+### 方法 3: 使用工具脚本
 
-**检索流水线**（2026-06-08 重构）：
-```
-Stage 1: FTS5 前缀匹配（"WSL" → "WSL*"，速度快）
-    ↓ 无结果
-Stage 2: LIKE 子串匹配（"网络" → LIKE '%网络%'，中文兜底）
-    ↓ 候选集
-Stage 3: Jaccard 重排序（query tokens ↔ fact tokens 重叠度）
-Stage 4: 信任分数加权（relevance × trust_score）
+```bash
+cd ~/.hermes/scripts
+python3 knowledge_retrieve_tool.py
 ```
 
-**模板**：
+## 集成到工作流
+
+### 在处理用户消息前调用
+
 ```python
-fact_store(action='search', query='[关键词1] [关键词2]')
+# 1. 分析用户消息
+analysis = analyze_message(user_message)
+
+# 2. 检索相关知识
+results = retrieve_knowledge(analysis)
+
+# 3. 评分
+scored_results = score_results(analysis, results)
+
+# 4. 生成响应
+response = generate_response(analysis, scored_results)
+
+# 5. 使用上下文
+if response['has_relevant_knowledge']:
+    # 将上下文注入到对话中
+    inject_context(response['context'])
 ```
 
-**示例**：
+## 文件位置
+
+- 主模块: `~/.hermes/scripts/knowledge_retrieval.py`
+- 消息分析器: `~/.hermes/scripts/message_analyzer.py`
+- 知识检索器: `~/.hermes/scripts/knowledge_retriever.py`
+- 相关性评分器: `~/.hermes/scripts/relevance_scorer.py`
+- 响应生成器: `~/.hermes/scripts/response_generator.py`
+- 工具脚本: `~/.hermes/scripts/knowledge_retrieve_tool.py`
+- 会话标签提取器: `~/.hermes/scripts/session_tag_extractor.py`
+- 会话关联发现器: `~/.hermes/scripts/session_relation_finder.py`
+- 会话索引生成器: `~/.hermes/scripts/session_index_generator.py`
+- Hermes 核心集成: `~/.hermes/scripts/hermes_integration.py`
+- 反馈收集器: `~/.hermes/scripts/feedback_collector.py`
+- 学习机制: `~/.hermes/scripts/learning_mechanism.py`
+- 预测机制: `~/.hermes/scripts/prediction_mechanism.py`
+
+## 数据源
+
+### fact_store
+- 路径: `~/.hermes/memory_store.db`
+- 内容: 结构化知识（76 条记录）
+- 搜索: FTS5 全文搜索
+
+### session_search
+- 路径: `~/.hermes/sessions/state.db`
+- 内容: 会话历史
+- 搜索: 标题匹配
+
+### llm-wiki
+- 路径: `/mnt/c/Users/yingm/wiki/`
+- 内容: 可视化知识库（83 个页面）
+- 搜索: index.md 匹配
+
+## 测试
+
+```bash
+cd ~/.hermes/scripts
+python3 knowledge_retrieval.py
+```
+
+## Pitfalls
+
+### 1. 数据库不存在
+**问题**: fact_store 或 session_search 数据库不存在  
+**解决**: 检查数据库文件是否存在，不存在则创建
+
+### 2. 表不存在
+**问题**: sessions 表不存在  
+**解决**: 运行初始化脚本创建表
+
+### 3. 检索结果为空
+**问题**: 没有找到相关知识  
+**解决**: 检查关键词是否正确，尝试不同的搜索词
+
+### 4. 性能问题
+**问题**: 检索速度慢  
+**解决**: 限制检索范围（最近 100 个会话，前 10 条知识）
+
+### 5. 知识存储了但从未被检索（2026-06-15 诊断发现）
+**问题**: fact_store 有 76 条记录，但 retrieval_count 全部为 0 — 100% 从未被检索过  
+**根因**: 没有主动检索触发器，用户提问时不会自动搜索相关知识  
+**诊断方法**: 
 ```python
-fact_store(action='search', query='cron 超时')
-fact_store(action='search', query='MiMo 性能')
-fact_store(action='search', query='WSL')       # FTS5 前缀 → 找到 "WSL网络"
-fact_store(action='search', query='网络')      # FTS5 失败 → LIKE 兜底 → 找到
-fact_store(action='search', query='记忆')      # LIKE 子串匹配
+import sqlite3
+conn = sqlite3.connect('~/.hermes/memory_store.db')
+cursor = conn.execute("SELECT COUNT(*) FROM facts WHERE retrieval_count=0")
+never_used = cursor.fetchone()[0]
+print(f"从未检索: {never_used}")
+```
+**防御**: 
+- 定期检查 retrieval_count 分布，在 cron job 中加入健康检查
+- 如果大量记录 retrieval_count=0，说明检索触发器未生效
+- 搜索速度优化无意义 — 如果根本没在搜索的话
+
+### 6. 评估记忆系统不能只看存储侧（2026-06-15 用户纠正）
+**问题**: 评估报告只关注了"搜索速度"，忽略了"搜索是否在发生"  
+**用户原话**: "我要求的效果是无论我在哪个对话中提出问题或者是要求执行哪项操作，你都能及时做出正确的反应"  
+**教训**: 评估任何知识/记忆系统时，必须同时检查：
+1. **存储侧**: 数据是否完整、结构是否合理
+2. **检索侧**: 检索是否在发生、触发率是多少
+3. **应用侧**: 检索到的知识是否被正确应用
+4. **反馈侧**: 用户反馈是否在优化系统
+
+**正确评估框架**:
+```
+存储完整性 × 检索触发率 × 检索准确率 × 知识应用率 = 系统有效性
 ```
 
-**注意**：多词查询用 OR 连接（自动），返回结果按相关度排序。中文词无需特殊处理，LIKE 兜底自动覆盖。
+## 维护
 
-### 3. 实体探查 (probe)
+### 更新检索计数
+每次检索后，fact_store 的 retrieval_count 会自动更新。
 
-**何时使用**：查询某个实体的所有相关事实。
+### 清理旧数据
+定期清理旧的会话数据和过时的知识。
 
-**模板**：
-```python
-fact_store(action='probe', entity='[实体名称]')
-```
-
-**示例**：
-```python
-fact_store(action='probe', entity='MiMo')
-# → 返回所有提到 MiMo 的事实
-
-fact_store(action='probe', entity='WSL')
-# → 返回所有提到 WSL 的事实
-```
-
-### 4. 关联追踪 (related)
-
-**何时使用**：查找与某实体关联的其他实体。
-
-**模板**：
-```python
-fact_store(action='related', entity='[实体名称]')
-```
-
-**示例**：
-```python
-fact_store(action='related', entity='A股')
-# → 返回与 A股 相关的数据源、技能、方法论等
-```
-
-### 5. 跨实体推理 (reason)
-
-**何时使用**：需要同时查询多个实体的交集。
-
-**模板**：
-```python
-fact_store(action='reason', entities=['[实体1]', '[实体2]', '[实体3]'])
-```
-
-**示例**：
-```python
-fact_store(action='reason', entities=['WSL', '网络', 'cron'])
-# → 发现 WSL 网络是 cron 超时的根因
-
-fact_store(action='reason', entities=['MiMo', '性能', 'token'])
-# → 发现 MiMo 在长 token 下的性能瓶颈
-```
-
-### 6. 矛盾检测 (contract)
-
-**何时使用**：定期检查知识一致性，或发现信息冲突时。
-
-**模板**：
-```python
-fact_store(action='contract')
-```
-
-**处理矛盾**：
-1. 检查哪条事实更准确
-2. 更新或删除过时的事实
-3. 用 `fact_feedback(action='unhelpful', fact_id=xxx)` 标记错误事实
-
-### 7. 反馈进化 (feedback)
-
-**何时反馈**：
-- 使用事实后发现准确 → `helpful`
-- 使用事实后发现过时/错误 → `unhelpful`
-
-**模板**：
-```python
-# 标记有用（trust_score +0.1）
-fact_feedback(action='helpful', fact_id=[fact_id])
-
-# 标记过时（trust_score -0.1）
-fact_feedback(action='unhelpful', fact_id=[fact_id])
-```
-
-### 8. 列出所有事实 (list)
-
-**模板**：
-```python
-fact_store(action='list')
-```
-
-## 最佳实践
-
-### 存储质量标准
-
-✅ **好的事实**：
-- 包含具体条件（"输入超过 28K tokens"）
-- 包含根因分析（"服务器容量有限"）
-- 包含解决方案（"context_length=50000"）
-- 使用标签分类（"mimo,performance"）
-
-❌ **坏的事实**：
-- 过于笼统（"MiMo 很慢"）
-- 缺乏条件（"这个工具不好用"）
-- 临时状态（"正在调试中"）
-
-### 信任分数管理
-
-- 新事实默认 0.5
-- 被标记 helpful → +0.1
-- 被标记 unhelpful → -0.1
-- 高频检索 → 间接提升
-- 定期清理低信任（<0.3）的事实
-
-### 定期维护
-
-建议每周执行一次：
-```python
-# 1. 列出所有事实
-fact_store(action='list')
-
-# 2. 检查矛盾
-fact_store(action='contract')
-
-# 3. 清理过时事实（trust_score < 0.3）
-fact_store(action='remove', fact_id=[id])
-
-# 4. 标记常用事实为 helpful
-fact_feedback(action='helpful', fact_id=[id])
-```
-
-## Pitfalls（常见错误）
-
-### 1. 把临时状态存入 Crystal
-
-❌ **错误**：
-```python
-fact_store(action='add', content='正在调试 cron job 超时问题')
-```
-
-✅ **正确**：用 `memory` 工具存储临时状态。
-
-### 2. 存储过于笼统的事实
-
-❌ **错误**：
-```python
-fact_store(action='add', content='opencli 有问题')
-```
-
-✅ **正确**：
-```python
-fact_store(action='add', 
-    content='opencli daemon start 命令不存在，正确命令是 opencli daemon restart',
-    category='tool',
-    tags='opencli,daemon,command')
-```
-
-### 3. 忘记设置标签
-
-❌ **错误**：
-```python
-fact_store(action='add', content='...', category='general')
-```
-
-✅ **正确**：
-```python
-fact_store(action='add', content='...', category='general', tags='tag1,tag2,tag3')
-```
-
-### 4. 不反馈导致信任分数失真
-
-❌ **错误**：使用事实后不反馈。
-
-✅ **正确**：每次使用后反馈。
-```python
-# 使用事实后
-fact_feedback(action='helpful', fact_id=41)
-```
-
-### 5. 用 search 代替 probe
-
-❌ **错误**：想查询某实体的所有事实，却用关键词搜索。
-
-✅ **正确**：用 `probe` 查询实体。
-```python
-# 错误
-fact_store(action='search', query='MiMo')
-
-# 正确
-fact_store(action='probe', entity='MiMo')
-```
-
-### 6. FTS5 中文搜索失败（已修复 2026-06-08）
-
-**问题**：`search('WSL')` 返回空，但 `list` 能看到包含 "WSL" 的事实。
-
-**根因**：FTS5 的 `unicode61` 分词器将中英文混合文本合并成一个 token：
-```
-存储: "WSL网络关键事实"
-分词: ["WSL网络关键事实"]  ← "WSL" 和 "网络" 被合并
-搜索 "WSL": 找不到单独的 "WSL" 词 → 返回空
-搜索 "WSL*": 前缀匹配 "WSL网络" → 成功
-```
-
-**修复**（`plugins/memory/holographic/retrieval.py`）：
-- `_build_fts_query()` 自动加前缀通配符（query → query*）
-- 纯中文词跳过 FTS5（前缀匹配对中文无效）
-- `_fts_candidates()` 增加 LIKE 子串降级：FTS5 无结果时用 `LIKE '%关键词%'`
-- `_tokenize_for_like()` 中文↔拉丁文边界分词："WSL网络" → ["WSL", "网络"]
-
-**修复后验证**：
-```python
-fact_store(action='search', query='WSL')      # FTS5 前缀 → 1 条 ✅
-fact_store(action='search', query='网络')     # LIKE 兜底 → 1 条 ✅
-fact_store(action='search', query='记忆')     # LIKE 兜底 → 3 条 ✅
-fact_store(action='search', query='热点刀锋')  # LIKE 兜底 → 2 条 ✅
-```
-
-### 7. numpy 未安装 → 整个向量检索链断裂
-
-**症状**：probe/related/reason 全部降级为 search，search 对中文又返回空。
-
-**根因**：`plugins/memory/holographic/holographic.py` 用 numpy 做相位向量运算。如果 numpy 不可用（`hrr._HAS_NUMPY = False`）：
-- `_compute_hrr_vector()` 静默跳过（不报错）
-- probe/related/reason 的 SQL `WHERE hrr_vector IS NOT NULL` 过滤掉所有无向量的事实
-- 降级为 search → 如果 FTS5 也失败 → 返回空
-
-**诊断**：
-```python
-# 在 execute_code 中检查
-import sys; sys.path.insert(0, "/home/yingming/.hermes/hermes-agent")
-from plugins.memory.holographic import holographic as hrr
-print(f"hrr._HAS_NUMPY: {hrr._HAS_NUMPY}")  # 必须为 True
-```
-
-**修复**：`uv pip install numpy`（在 .venv 中安装）
-
-**回填数据**：安装 numpy 后，已有事实缺少 HRR 向量，需要回填：
-```python
-from plugins.memory.holographic.store import MemoryStore
-store = MemoryStore(db_path="~/.hermes/memory_store.db")
-result = store.backfill_all()
-# → {'facts_processed': 19, 'vectors_computed': 19, 'entities_added': 87, 'banks_rebuilt': 3}
-```
-
-### 8. 实体提取不认中文
-
-**症状**：`probe('WSL')` 返回空，因为事实没有实体关联。
-
-**根因**：`store.py` 的 `_extract_entities()` 只用英文正则：
-- `\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)` — 只认英文大写词
-- `"xxx"` / `'xxx'` — 只认引号
-
-中文文本 "WSL网络关键事实" 中的 "WSL" 后面直接跟中文，正则不认。
-
-**修复**（2026-06-08）：
-- 新增 `_RE_CN_PAREN_TERM` 正则：提取 "MiMo (小米大模型)" 模式
-- 新增 `_KNOWN_ENTITIES` 集合：30+ 个已知技术术语（WSL/MiMo/问财/A股/numpy 等）
-- `_extract_entities()` 新增括号术语提取 + 已知术语子串匹配
-
-**回填**：同 Pitfall #7，`store.backfill_all()` 会同时修复实体和向量。
-
-### 9. HRR 向量静默缺失
-
-**症状**：部分事实有 HRR 向量，部分没有。有向量的能被 probe 找到，没有的只能靠 FTS5。
-
-**根因**：numpy 安装时间晚于事实创建时间。`_compute_hrr_vector()` 在 numpy 不可用时直接 `return`，不报错不标记。
-
-**诊断**：
-```python
-# 检查哪些事实缺少向量
-store._conn.execute("SELECT fact_id FROM facts WHERE hrr_vector IS NULL").fetchall()
-```
-
-**修复**：`store.backfill_all()` 一次性补全所有缺失向量。
-
-### 10. Memory Bank 计数虚高
-
-**症状**：`memory_banks` 表的 `fact_count` 远大于实际事实数。
-
-**根因**：删除事实时 bank 没正确重建，或 bank 是累积计算而非实时同步。
-
-**修复**：`store.backfill_all()` 会重建所有 bank 并清理孤儿 bank。
-
-### 11. 代码修改后需要重启 Hermes
-
-**症状**：修改了 `plugins/memory/holographic/*.py` 但 `fact_store` 工具行为不变。
-
-**根因**：Python 模块缓存。Hermes 启动时加载插件代码到内存，运行期间不会重新加载。
-
-**解决**：修改插件代码后必须重启 Hermes 才能生效。在 execute_code 中直接 import 可以绕过缓存（用于验证），但 agent 的 fact_store 工具走的是已缓存的旧代码。
-
-### 12. 先写文档后测试（流程错误）
-
-**教训**（2026-06-08）：创建了完整的 SKILL.md + Wiki + GitHub 仓库 + 模板，但没有验证 fact_store 的 search/probe/reason 是否正常工作。用户发现后指出："这套系统并没有经过测试这个环节？"
-
-**正确流程**：
-1. **先验证核心功能** → 测试 add/search/probe/reason/contradict
-2. **发现问题立即修复** → 不要继续写文档
-3. **修复后重新测试** → 确认所有操作正常
-4. **然后才写文档和技能** → 文档反映真实行为
-
-**原则**：工具能用 > 文档好看。没有经过测试的文档是误导。
-
-## v2.0 新增：Dream 记忆整合
-
-借鉴 Claude Code 的 Dream Memory Consolidation，Memory Crystal 现在支持四阶段记忆整合：
-
-```
-Phase 1 — 定位：扫描所有事实，建立基线
-Phase 2 — 采集：从会话/任务中提取新信号（成功+失败）
-Phase 3 — 整合：合并重复、更新过时、补充标签
-Phase 4 — 修剪：清理低信任、合并近似、生成报告
-```
-
-**触发时机**：每日 22:00 由 Phoenix Protocol 深度进化任务自动触发，或用户说"记忆整合"时手动触发。
-
-**详细流程**：参考 `references/dream-consolidation.md`
-
-## v2.0 新增：自动记忆修剪
-
-Memory Crystal 现在支持自动修剪规则：
-
-| 条件 | 动作 |
-|------|------|
-| trust < 0.3 且创建 >30 天 | 删除 |
-| trust < 0.2 且创建 >7 天 | 删除 |
-| content_similarity > 0.8 | 合并（保留较新的） |
-| 内容 <10 字且 trust < 0.5 | 增强或删除 |
-| helpful_count ≥ 3 | 强化（永不自动删除） |
-
-**安全矩阵**：
-- 创建 <7 天的事实 → 永不自动删除
-- trust ≥ 0.5 的事实 → 永不自动删除
-- 被标记 helpful ≥3 次 → 永不自动删除
-
-**详细规则**：参考 `references/auto-pruning-rules.md`
-
-## v2.0 新增：成功反馈 + 双向记录
-
-借鉴 Claude Code 的洞察：
-> "如果只保存纠正，会避免过去的错误，但会偏离用户已验证过的方法，变得过于谨慎。"
-
-**新增反馈类型**：
-
-| 场景 | 反馈 | 效果 |
-|------|------|------|
-| 事实被使用且正确 | `fact_feedback(action='helpful')` | trust +0.1 |
-| 事实被使用但错误 | `fact_feedback(action='unhelpful')` | trust -0.1 |
-| 修复验证通过 | `fact_store(action='add', tags='verified-fix')` | 记录成功模式 |
-| 工作模式有效 | `fact_store(action='add', tags='success-pattern')` | 记录成功方法 |
-
-**关键改变**：不只在犯错时记录，在做对时也要记录。成功的模式和失败的教训同样有价值。
-
-## v2.0 新增：记忆选择性注入
-
-借鉴 Claude Code 的 Memory Synthesis 机制，Memory Crystal 现在推荐按需检索而非全量注入：
-
-| 场景 | 推荐策略 | 工具 |
-|------|---------|------|
-| 简单查询 | search(关键词) top-3 | `fact_store(action='search')` |
-| 涉及特定实体 | probe(实体名) | `fact_store(action='probe')` |
-| 多实体交叉 | reason([实体列表]) | `fact_store(action='reason')` |
-| 全量巡检 | list（全部） | `fact_store(action='list')` |
-
-**原则**：搜索优于全量，top-N 优于全部，实体感知优于关键词，推理优于检索。
-
-**详细指南**：参考 `references/selective-injection.md`
-
-## 与 memory 工具的配合
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    记忆系统分层                               │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│   ┌──────────────┐     ┌──────────────┐                     │
-│   │    memory     │     │    Crystal    │                     │
-│   │  (短期/会话)   │     │  (长期/结构化) │                    │
-│   └──────┬───────┘     └──────┬───────┘                     │
-│          │                     │                             │
-│          ▼                     ▼                             │
-│   ┌──────────────┐     ┌──────────────┐                     │
-│   │ 用户偏好      │     │ 环境配置      │                     │
-│   │ 临时状态      │     │ 工作教训      │                     │
-│   │ 会话上下文    │     │ 知识网络      │                     │
-│   └──────────────┘     └──────────────┘                     │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## 参考文档
-
-- [架构详解](references/architecture.md)
-- [ASCII Logo](references/logo.txt)
-- [FTS5 中文搜索修复记录](references/fts5-chinese-fix.md) — 2026-06-08 修复 search 对中文返回空的问题
-- [Holographic 调试指南](references/holographic-debugging-guide.md) — 诊断脚本、修复步骤、检索流水线详解
-- [Dream 记忆整合](references/dream-consolidation.md) — v2.0 四阶段整合流程（定位→采集→整合→修剪）
-- [自动修剪规则](references/auto-pruning-rules.md) — v2.0 过时删除+重复合并+低信任清理
-- [选择性注入](references/selective-injection.md) — v2.0 按需检索替代全量注入
-- [Wiki 文档](/mnt/c/Users/yingm/wiki/systems/hermes/2026-06-08-Memory-Crystal-记忆晶体系统.md)
-
-## 口号
-
-> **让知识结晶，让记忆永恒**  
-> **Let Knowledge Crystallize, Let Memory Endure**
-
----
-
-*Memory Crystal — 不是存储，是结晶。*
+### 优化评分算法
+根据用户反馈优化相关性评分算法。
