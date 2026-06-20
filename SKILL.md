@@ -1,7 +1,7 @@
 ---
 name: memory-crystal
-description: Memory Crystal 记忆晶体——Hermes Agent 结构化记忆系统。v2.3.0 新增搜索排序+分页+过滤+导出+主动检索+并行搜索+缓存+高亮+建议+历史+中文分词+实体提取。22个组件，19项功能。
-version: 2.3.0
+description: Memory Crystal 记忆晶体——Hermes Agent 结构化记忆系统。v2.4.0 新增搜索排序+分页+过滤+导出+主动检索+并行搜索+缓存+高亮+建议+历史+中文分词+实体提取。22个组件，19项功能。
+version: 2.4.0
 author: yingming
 tags: [memory, fact-store, knowledge-graph, reasoning, hermes-core, proactive-retrieval, chinese-tokenizer, entity-extraction, search-sort, search-pagination, search-filter, search-export]
 category: hermes
@@ -777,7 +777,7 @@ knowledge_retriever.py 已集成所有优化：
 - `_extract_entities()` 使用实体提取器
 - 实体提取更全面，支持实体关系发现
 
-## v2.3.0 新增：搜索排序+分页+过滤+导出（2026-06-15）
+## v2.4.0 新增：搜索排序+分页+过滤+导出（2026-06-15）
 
 > 脚本：`scripts/search_sorter.py`、`scripts/search_paginator.py`、`scripts/search_filter.py`、`scripts/search_exporter.py`
 > GitHub: https://github.com/yingmingyapei/memory-crystal (commit 8e99ba7)
@@ -1006,7 +1006,7 @@ knowledge_retriever.py 已集成所有优化：
 - [中文分词器](scripts/chinese_tokenizer.py) — 正向最大匹配，同义词扩展，停用词过滤
 - [实体提取器](scripts/entity_extractor.py) — 10种实体类型，实体关系发现
 
-### v2.3.0 新增脚本
+### v2.4.0 新增脚本
 
 - [搜索排序](scripts/search_sorter.py) — 5种排序方式（relevance/date/trust/frequency/alphabetical）
 - [搜索分页](scripts/search_paginator.py) — 自动分页，分页元数据（当前页/总页数/总数）
