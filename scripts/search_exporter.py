@@ -68,37 +68,42 @@ def export_json(results, output_file=None):
         "results": results
     }
     
+    content = json.dumps(data, ensure_ascii=False, indent=2)
     if output_file:
         with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write(content)
         print(f"✅ 已导出到 {output_file}")
     else:
-        print(json.dumps(data, ensure_ascii=False, indent=2))
+        print(content)
+    return content
 
 def export_csv(results, output_file=None):
     """导出为CSV格式"""
     if not results:
         print("没有数据可导出")
-        return
+        return ""
     
     fieldnames = ["fact_id", "content", "category", "tags", "trust_score", "retrieval_count", "created_at"]
     
+    import io
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(results)
+    content = buf.getvalue()
     if output_file:
         with open(output_file, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(results)
+            f.write(content)
         print(f"✅ 已导出到 {output_file}")
     else:
-        writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(results)
+        print(content)
+    return content
 
 def export_markdown(results, output_file=None):
     """导出为Markdown格式"""
     if not results:
         print("没有数据可导出")
-        return
+        return ""
     
     lines = []
     lines.append("# 搜索结果导出")
@@ -123,6 +128,7 @@ def export_markdown(results, output_file=None):
         print(f"✅ 已导出到 {output_file}")
     else:
         print(content)
+    return content
 
 def main():
     """主函数"""
