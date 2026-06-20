@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fact_store CLI - 命令行接口访问fact_store数据库
+fact_store CLI v1.0.0 - 命令行接口访问fact_store数据库
 用法: python3 fact_store_cli.py <command> [args...]
 
 命令:
@@ -16,6 +16,11 @@ import os
 import sqlite3
 
 DB_PATH = os.path.expanduser("~/.hermes/memory_store.db")
+
+# 版本信息
+__version__ = "1.0.0"
+__author__ = "yingming"
+__created__ = "2026-06-20"
 
 def get_connection():
     if not os.path.exists(DB_PATH):
