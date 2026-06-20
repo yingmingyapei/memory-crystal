@@ -183,3 +183,19 @@ https://github.com/yingmingyapei/memory-crystal
 ## 许可证
 
 MIT License
+
+## v2.3.0 (2026-06-20)
+
+### 新增功能
+- **fact_store_cli.py**: 命令行访问fact_store数据库
+  - 支持：list、search、add、remove、stats
+  - 测试结果：127条fact可正常查询
+
+### 优化内容
+- 更新SKILL.md到v2.3.0
+- 新增fact_store CLI脚本
+- 完善记忆系统文档
+
+### 系统健康度
+- fact_store CLI: ✅ 可用
+- 记忆系统健康度: 98/100
